@@ -1,0 +1,26 @@
+---
+title: "Applies meta-analysis to find LTB gene signature"
+author: "Andrew Bo Liu"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Applies meta-analysis to find LTB gene signature}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r, fig.show='hold'}
+plot(1:10)
+plot(10:1)
+```
+
+```{r, echo=FALSE, results='asis'}
+knitr::kable(head(mtcars, 10))
+```
