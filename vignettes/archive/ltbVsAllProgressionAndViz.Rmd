@@ -1,0 +1,104 @@
+---
+title: ""
+author: ""
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE
+)
+```
+
+Paired t-test of 6-gene scores of first and last samples from Scriba progressors:
+
+```{r, results="hide"}
+library(magrittr)
+library(purrr)
+library(glue)
+library(gridExtra)
+devtools::load_all()
+load(here::here("data", "TB_human_datasets_04_2018.RData"))
+load(here::here("data", "geneFilters.RData"))
+scribaDatasetIDs = startsWith(names(TB_human_datasets_04_2018), "GSEScriba")
+scribaDatasets = TB_human_datasets_04_2018[scribaDatasetIDs]
+gf6 = geneFilters$`6-gene signature for Latent TB vs. Healthy and Active TB`
+score_by_subject = scribaDatasets %>% purrr::map(function(df) { df$pheno$score6 = MetaIntegrator::calculateScore(gf6, df); df$pheno}) %>% dplyr::bind_rows(.id = "id") %>% dplyr::filter(group == "Progressor") %>% dplyr::arrange(.first_num_in_string(id)) %>% dplyr::group_by(Subject) %>% dplyr::summarize(first_score = dplyr::last(score6), last_score = dplyr::first(score6))
+```
+
+```{r, echo = TRUE}
+t.test(score_by_subject$last_score, score_by_subject$first_score, paired = TRUE)
+```
+
+Before doing t-SNE of samples from discovery and validation, first we have to figure out which genes to exclude so that most datasets include all the genes we need. Check that these genes still do a decent job in discovery and validation AU(PR)Cs.
+
+```{r, results = "hide"}
+datasets_of_interest = .excl_named_list(TB_human_datasets_04_2018, c("GSE41055", "GSE39939", "GSE62525"))
+genes16 = c(geneFilters$`13-gene signature for Latent TB vs. Healthy and Active TB`$posGeneNames, geneFilters$`13-gene signature for Latent TB vs. Healthy and Active TB`$negGeneNames, geneFilters$`3-gene signature for Active TB vs. Latent TB, Healthy and Other Disease`$posGeneNames, geneFilters$`3-gene signature for Active TB vs. Latent TB, Healthy and Other Disease`$negGeneNames)
+y = datasets_of_interest %>%
+  # purrr::map(function(ds) { .filterGSE(ds, c("Active TB", "Latent TB", "Healthy")) }) %>%
+  # purrr::discard(function(ds) { plyr::empty(ds$pheno) }) %>%
+  purrr::map(function(gse) {
+    gse %>%
+      .avg_expr_per_gene %>%
+      dplyr::select(dplyr::one_of(c(genes16, "group", "sample")))
+  })
+genes_ord_by_num_ds = y %>% purrr::map(colnames) %>% unlist %>% purrr::keep(~ . %in% genes16) %>% table %>% sort(decreasing=TRUE) %>% head(n=16) %>% names
+geneFilters$`6-gene signature for Latent TB vs. Healthy and Active TB` = geneFilters$`13-gene signature for Latent TB vs. Healthy and Active TB`
+geneFilters$`6-gene signature for Latent TB vs. Healthy and Active TB`$posGeneNames = geneFilters$`6-gene signature for Latent TB vs. Healthy and Active TB`$posGeneNames %>% purrr::keep(~ . %in% genes_ord_by_num_ds[1:9])
+geneFilters$`6-gene signature for Latent TB vs. Healthy and Active TB`$negGeneNames = geneFilters$`6-gene signature for Latent TB vs. Healthy and Active TB`$negGeneNames %>% purrr::keep(~ . %in% genes_ord_by_num_ds[1:9])
+potentialDiscoveryGSEIDs = c("GSE19491", "GSE28623", "GSE54992", "GSE37250", "GSE39939.noCultureNeg", "GSE39940")
+case_classes = c("Latent TB")
+control_classes = c("Healthy", "Active TB")
+discoveryGSEs = lapply(TB_human_datasets_04_2018[potentialDiscoveryGSEIDs], function(gse) {
+    filteredGSE = .filterGSE(gse, classesOfInterest=c(case_classes, control_classes))
+    filteredGSEWithClass = .addClassVec(filteredGSE, caseClasses=case_classes)
+    filteredGSEWithClass
+})
+# Only keep GSEs which have >= 2 cases and >= 2 controls, for effect size (Hedges' g) to be well-defined.
+discoveryGSEs = discoveryGSEs %>%
+  purrr::keep(function(gse) sum(gse$class) > 1 && sum(gse$class) < length(gse$class)-1)
+potentialValidationGSEIDs = c("GSEScribaDay0to7", "GSE101705", "GSE73408", "GSE69581")
+validationGSEs = lapply(TB_human_datasets_04_2018[potentialValidationGSEIDs], function(gse) {
+    filteredGSE = .filterGSE(gse, classesOfInterest=c(case_classes, control_classes))
+    filteredGSEWithClass = .addClassVec(filteredGSE, caseClasses=case_classes)
+    filteredGSEWithClass
+})
+validationGSEs = validationGSEs %>%
+  purrr::keep(function(gse) sum(gse$class) > 1 && sum(gse$class) < length(gse$class)-1)
+```
+
+```{r, fig.width=8.5, fig.height=11}}
+name_6gene = "6-gene signature for Latent TB vs. Healthy and Active TB"
+prcDisc = MetaIntegrator::multiplePRCplot(list(originalData=discoveryGSEs), geneFilters[[name_6gene]], title = glue::glue("{name_6gene} in Discovery"), size = 10)
+rocDisc = MetaIntegrator::multipleROCPlot(list(originalData=discoveryGSEs), geneFilters[[name_6gene]], title = glue::glue("{name_6gene} in Discovery"), size = 10)
+prcValid = MetaIntegrator::multiplePRCplot(list(originalData=validationGSEs), geneFilters[[name_6gene]], title = glue::glue("{name_6gene} in Validation"), size = 10)
+rocValid = MetaIntegrator::multipleROCPlot(list(originalData=validationGSEs), geneFilters[[name_6gene]], title = glue::glue("{name_6gene} in Validation"), size = 10)
+grid.arrange(prcDisc, rocDisc, prcValid, rocValid, ncol=2)
+```
+
+t-SNE now.
+
+```{r}
+ds_with_all_genes = y %>%
+  purrr::keep(~ all(genes_ord_by_num_ds[1:9] %in% colnames(.))) %>%
+  plyr::ldply(.id = "gse") %>%
+  dplyr::select(c(genes_ord_by_num_ds[1:9], "group", "sample", "gse")) %>%
+  dplyr::filter(!duplicated(.[,genes_ord_by_num_ds[1:9]]))
+set.seed(42)
+tsne_out = Rtsne::Rtsne(ds_with_all_genes %>% dplyr::select(dplyr::one_of(genes_ord_by_num_ds[1:9])))
+tsne_pts = dplyr::bind_cols(as.data.frame(tsne_out$Y), group=ds_with_all_genes$group, gse=ds_with_all_genes$gse)
+library(ggplot2)
+p1 = ggplot(tsne_pts, aes(V1, V2)) + geom_point(aes(color = group)) + ggtitle(glue::glue("t-SNE of {nrow(tsne_pts)} samples by {glue::collapse(genes_ord_by_num_ds[1:9], sep=', ', last=' and ')}")) + theme(plot.title = element_text(size = 10))
+p2 = ggplot(tsne_pts, aes(V1, V2)) + geom_point(aes(color = gse)) + ggtitle(glue::glue("t-SNE of {nrow(tsne_pts)} samples by {glue::collapse(genes_ord_by_num_ds[1:9], sep=', ', last=' and ')}")) + theme(plot.title = element_text(size = 10))
+grid.arrange(p1, p2, ncol=2)
+```

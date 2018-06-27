@@ -1,0 +1,120 @@
+---
+title: "Applies meta-analysis to find LTB vs. Healthy gene signature"
+author: "Andrew Bo Liu"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE
+)
+```
+
+```{r, results="hide", fig.show="hide"}
+library(magrittr)
+library(purrr)
+library(glue)
+library(gridExtra)
+devtools::load_all()
+load(here::here("data", "TB_human_datasets_04_2018.RData"))
+potentialDiscoveryGSEIDs = c("GSE19491", "GSE28623", "GSE54992", "GSE37250", "GSE39939.noCultureNeg", "GSE39940")
+case_classes = c("Latent TB")
+control_classes = c("Healthy")
+discoveryGSEs = lapply(TB_human_datasets_04_2018[potentialDiscoveryGSEIDs], function(gse) {
+  filteredGSE = .filterGSE(gse, classesOfInterest=c(case_classes, control_classes))
+  filteredGSEWithClass = .addClassVec(filteredGSE, caseClasses=case_classes)
+  filteredGSEWithClass
+}) %>% # Only keep GSEs which have >= 2 cases and >= 2 controls, for effect size (Hedges' g) to be well-defined.
+  keep(function(gse) sum(gse$class) > 1 && sum(gse$class) < length(gse$class)-1)
+discoveryGSEIDs = names(discoveryGSEs)
+lVsHDiscovery = MetaIntegrator::runMetaAnalysis(list(originalData=discoveryGSEs))
+```
+
+```{r, results="hide"}
+# Check discovery AUCs.
+# Forward search (2 and 27), no forward search (2 and 6), no LOO only
+effectSizeThresholds = c(0.6, 0.8, 1)
+geneFilters = effectSizeThresholds %>% map(~MetaIntegrator::filterGenes(lVsHDiscovery, numberStudiesThresh = ceiling(length(discoveryGSEs) / 2), FDRThresh = 0.1, effectSizeThresh = ., isLeaveOneOut = FALSE)) %>% map(~.$filterResults[[1]]) %>% map(~.removeLOCMIRFromFilter(.)) %>% discard(~length(.$posGeneNames) + length(.$negGeneNames) == 0)
+geneFilters[[3]] = MetaIntegrator::forwardSearch(lVsHDiscovery, geneFilters[[1]]) # Do forward search on the 27-gene signature to get an additional 6-gene signature (FS on the other 2-gene signature returns the same 2-gene signature)
+names(geneFilters) = geneFilters %>% map_chr(~.describeGeneSig(., case_classes = case_classes, control_classes = control_classes))
+```
+
+We performed meta-analysis to identify three different gene signatures for latent vs. healthy:
+
+```{r, results="asis"}
+geneFilters %>% map_chr(~.describeGeneSigVerbose(., case_classes = case_classes, control_classes = control_classes, datasets = discoveryGSEIDs)) %>% paste("-", .) %>% collapse(sep = "\n")
+```
+
+We calculated their performances in *discovery* (PRCs on the left, ROCs on the right):
+
+```{r, fig.width=8.5, fig.height=11}
+# Curves and AU(PR)Cs
+plots = names(geneFilters) %>% map(function(gfName) {
+  title = stringr::str_wrap(gfName, width = 80)
+  prc = MetaIntegrator::multiplePRCplot(lVsHDiscovery, geneFilters[[gfName]], title = title, size = 10)
+  roc = MetaIntegrator::multipleROCPlot(lVsHDiscovery, geneFilters[[gfName]], title = title, size = 10)
+  return(list(prc=prc, roc=roc))
+}) %>% unlist(recursive = FALSE)
+do.call(grid.arrange, c(plots, ncol=2))
+```
+
+```{r, results="hide", fig.show="hide"}
+# See how it validates
+potentialValidationGSEIDs = c("GSEScribaDay0to7", "GSE101705", "GSE73408", "GSE69581")
+validationGSEs = lapply(TB_human_datasets_04_2018[potentialValidationGSEIDs], function(gse) {
+  filteredGSE = .filterGSE(gse, classesOfInterest=c(case_classes, control_classes))
+  filteredGSEWithClass = .addClassVec(filteredGSE, caseClasses=case_classes)
+  filteredGSEWithClass
+}) %>%
+  keep(function(gse) sum(gse$class) > 1 && sum(gse$class) < length(gse$class)-1)
+validationGSEIDs = names(validationGSEs)
+lVsHValidation = MetaIntegrator::runMetaAnalysis(list(originalData=validationGSEs))
+```
+
+We calculated their performances in *validation*:
+
+```{r, fig.width=8.5, fig.height=11}
+plots = names(geneFilters) %>% map(function(gfName) {
+  title = stringr::str_wrap(gfName, width = 80)
+  prc = MetaIntegrator::multiplePRCplot(lVsHValidation, geneFilters[[gfName]], title = title, size = 10)
+  roc = MetaIntegrator::multipleROCPlot(lVsHValidation, geneFilters[[gfName]], title = title, size = 10)
+  return(list(prc=prc, roc=roc))
+}) %>% unlist(recursive = FALSE)
+do.call(grid.arrange, c(plots, ncol=2))
+```
+
+We performed a second analysis: to understand whether the high AUCs of the previous 31-, 12- and 11-gene "latent vs. active _and healthy_" signatures were mostly driven by ability to distinguish latent vs. active, we calculated these previous signatures' performance in latent vs. healthy classification:
+
+```{r, fig.width=8.5, fig.height=11}
+# Copy over geneSig11, geneSig12, geneSig31
+geneSig31 = geneFilters[[1]]
+geneSig31$posGeneNames = c("WDR73", "GTF2H4", "FCGBP", "TOP3B", "POLD2", "MED6", "FLJ38717", "TCF4", "LONP2", "PARM1", "CBX7", "ABHD6", "C1orf93", "GAGE2B", "GPN1", "RNASEH1")
+geneSig31$negGeneNames = c("SMARCD3", "CTSD", "DNAJC13", "VAMP5", "METTL9", "ITGAM", "FCGR1C", "ATP6V0A1", "IFT20", "KCTD14", "TPST1", "ELANE", "NCRNA00120", "TOP1P2", "VWA5A")
+geneSig31$isLeaveOneOut = TRUE
+geneSig31$numberStudiesThresh = 4
+geneSig12 = geneSig31
+geneSig12$effectSizeThresh = 0.8
+geneSig12$posGeneNames = c("GTF2H4", "CNNM3", "CBX7", "C1orf203", "ZNF689")
+geneSig12$negGeneNames = c("SMARCD3", "HP", "FCGR1C", "CTSD", "TMEM167A", "FNDC3B", "CD63")
+geneSig11 = geneSig12
+geneSig11$effectSizeThresh = 1
+geneSig11$posGeneNames = c("C16orf67", "MGC3020", "RNF220", "KIF22", "FAM62B")
+geneSig11$negGeneNames = c("HP", "FCGR1C", "AGTRAP", "SIGLEC16", "DEFA1B", "ITGAM")
+geneFiltersLVsAH = list(geneSig31, geneSig12, geneSig11)
+names(geneFiltersLVsAH) = geneFiltersLVsAH %>% map_chr(~.describeGeneSig(., case_classes = case_classes, control_classes = control_classes))
+
+# Real work
+lVsHAll = list(originalData=c(lVsHDiscovery$originalData, lVsHValidation$originalData))
+plots = names(geneFiltersLVsAH) %>% map(function(gfName) {
+  title = stringr::str_wrap(gfName, width = 80)
+  prc = MetaIntegrator::multiplePRCplot(lVsHAll, geneFiltersLVsAH[[gfName]], title = title, size = 10)
+  roc = MetaIntegrator::multipleROCPlot(lVsHAll, geneFiltersLVsAH[[gfName]], title = title, size = 10)
+  return(list(prc=prc, roc=roc))
+}) %>% unlist(recursive = FALSE)
+do.call(grid.arrange, c(plots, ncol=2))
+```
