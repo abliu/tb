@@ -1,3 +1,21 @@
+.geom_text = function(...) {
+  geom_text(..., family = 'Palatino')
+}
+
+.cache_ = function(name, directory, fn) {
+  full_filename = file.path(directory, paste0(name, '.rds'))
+  if (file.exists(full_filename)) {
+    readRDS(full_filename)
+  } else {
+    res = match.fun(fn)()
+    if (!dir.exists(directory)) {
+      dir.create(directory)
+    }
+    saveRDS(res, full_filename)
+    res
+  }
+}
+
 .filterGSE = function(gse, classesOfInterest) {
   includeIndices = which(gse$pheno$group %in% classesOfInterest)
   gse$pheno = gse$pheno[includeIndices,]
@@ -122,4 +140,10 @@
   files = list.files(path = here::here("data"), pattern = file_pattern, recursive = TRUE)
   filename = sort(files, decreasing = TRUE)[1]
   readRDS(here::here("data", filename))
+}
+
+.abbreviate_if = function(str_vec, condition = function(x) {TRUE}, ...) {
+  cond_fn = match.fun(condition)
+  str_vec[cond_fn(str_vec)] = abbreviate(str_vec[cond_fn(str_vec)], ...)
+  str_vec
 }
