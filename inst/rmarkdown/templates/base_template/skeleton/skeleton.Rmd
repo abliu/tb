@@ -1,0 +1,57 @@
+---
+output:
+  beamer_presentation: default
+  tufte::tufte_html: default
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+  pdf_document: default
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+load_pkgs = c('cowplot', 'ggplot2', 'magrittr', 'tufte')
+purrr::walk(load_pkgs, ~ library(., character.only = TRUE))
+devtools::load_all()
+knitr::opts_chunk$set(
+  tidy = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE,
+  fig.fullwidth = TRUE,
+  fig.width = 4,
+  fig.height = 3)
+options(htmltools.dir.version = FALSE)
+```
+
+```{r gen_data, results="hide", fig.show="hide"}
+# Wrap in .cache_ from utils! E.g. gd = .cache_('gen_data', here::here('vignettes', <Rmd_filename>), function() {<evaluate code here and return important variables in list>})
+gd = .cache_('gen_data', here::here('vignettes', 'skeleton'), function() {
+  Sys.sleep(10)
+  return(list(stats=1:10))
+})
+```
+
+```{r fig1}
+# Use the dependson chunk options.
+theme_set(theme_gray(base_size = 10))
+ggplot(mtcars, aes(x=wt, y=mpg)) + geom_point()
+```
+
+First check whether you can fit your section (all GITS) on a Beamer slide (5.04 x 3.78 in). This is why I default set `fig.width=4` and `fig.height=3`^[This includes margin text.].
+
+----
+
+```{r fig2}
+p <- ggplot(mpg, aes(displ, cty)) + geom_point()
+p + facet_grid(drv ~ .)
+```
+
+It also includes tables. Use `knitr::kable` for tables.
+
+```{r tab1, dependson}
+knitr::kable(mtcars[1:6, 1:6])
+```
