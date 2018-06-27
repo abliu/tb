@@ -1,0 +1,81 @@
+---
+classoption: landscape
+fontsize: 10pt
+geometry: left=0.5in, right=0.5in, top=1in, bottom=1in
+link-citations: yes
+output:
+  pdf_document:
+    fig_crop: yes
+  beamer_presentation: default
+  html_document:
+    df_print: paged
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_html: default
+papersize: letter
+---
+
+```{r setup, include=FALSE}
+load_pkgs = c('cowplot', 'ggplot2', 'gtable', 'magrittr', 'purrr', 'tufte')
+purrr::walk(load_pkgs, ~ library(., character.only = TRUE))
+devtools::load_all()
+knitr::opts_chunk$set(
+  tidy = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE,
+  fig.fullwidth = TRUE,
+  fig.width = 4,
+  fig.height = 3)
+options(htmltools.dir.version = FALSE)
+```
+
+```{r gen_data, results="hide", fig.show="hide"}
+# Wrap in .cache_ from utils! E.g. gd = .cache_('gen_data', here::here('vignettes', <Rmd_filename>), function() {<evaluate code here>; return(environment())})
+gd = .cache_('gen_data', here::here('vignettes', 'ltbAnalysis'), function() {
+  TB_human_datasets_04_2018 = readRDS(here::here("data", "TB_human_datasets_04_2018.rds"))
+  potentialDiscoveryGSEIDs = c("GSE19491", "GSE28623", "GSE54992", "GSE37250", "GSE39939.noCultureNeg", "GSE39940")
+  potentialValidationGSEIDs = c("GSEScribaDay0to7", "GSE101705", "GSE73408", "GSE69581")
+  case_classes = c("Latent TB")
+  control_classes = c("Healthy", "Active TB", "Other Disease")
+  gses = lapply(TB_human_datasets_04_2018[c(potentialDiscoveryGSEIDs, potentialValidationGSEIDs)], function(gse) {
+    filteredGSE = .filterGSE(gse, classesOfInterest=c(case_classes, control_classes))
+      filteredGSEWithClass = .addClassVec(filteredGSE, caseClasses=case_classes)
+      filteredGSEWithClass
+  }) %>%
+    keep(function(gse) sum(gse$class) > 1 && sum(gse$class) < length(gse$class)-1)
+  gsesMeta = list(originalData = gses)
+  geneFilters = .get_gene_filter(datetime = "latest")
+  ds_by_filters = .gen_metrics_df(gsesMeta, geneFilters) %>%
+    dplyr::mutate(disc_or_valid = ifelse(dataset %in% potentialDiscoveryGSEIDs, 'Discovery', 'Validation'))
+  ds_labels = .gen_cohort_labels_df(gsesMeta$originalData) %>%
+    dplyr::mutate(disc_or_valid = ifelse(dataset %in% potentialDiscoveryGSEIDs, 'Discovery', 'Validation'))
+  ds_labels$info = "Cohort Info"
+  # remove things to save from environment?
+  rm(TB_human_datasets_04_2018, gses, gsesMeta, envir = environment())
+  return(environment())
+})
+```
+
+```{r fig_setup}
+fontfamily = 'Palatino'
+theme_set(theme_bw(base_size = 10) + theme(
+  text = element_text(family = fontfamily, size = 10),
+  panel.border = element_blank(),
+  strip.background = element_rect(fill = 'gray92', colour = 'white'),
+  strip.text = element_text(colour = 'gray40'),
+  axis.ticks = element_line(colour = 'gray92'),
+  axis.text = element_text(colour = 'gray40')))
+```
+
+```{r fig1, fig.height = 6.5, fig.width = 9.5}
+p1 = ggplot(gd$ds_by_filters, aes(metric_val, gene_filter)) + geom_point() + geom_errorbarh(aes(xmin = metric_lower, xmax = metric_upper), height = 0) + .geom_text(aes(label = signif(metric_val, 2)), hjust=0.25, vjust=1.1, colour='gray40', size=3) + xlab(NULL) + ylab(NULL) + facet_grid(disc_or_valid + dataset ~ metric_name, switch = "y", scales = "free_x", labeller = labeller(dataset = function(string) { substr(string, 1, 8)}))
+g1 = ggplotGrob(p1) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points")) # this is manual; will try to have automated way in future
+p2 = ggplot(gd$ds_labels, aes(.abbreviate_if(group, condition = function(x) { x != 'Healthy'}, minlength = 3))) + geom_bar(width = 0.05) + xlab(NULL) + ylab(NULL) + coord_flip() + facet_grid(dataset ~ info) + theme(strip.text.y = element_blank())
+g2 = ggplotGrob(p2) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points")) # this is manual; will try to have automated way in future
+plot_grid(g1, g2, nrow = 1, rel_widths = c(2, 1))
+```
