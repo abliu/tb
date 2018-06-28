@@ -1,3 +1,16 @@
+.sentence_case = function(str_vec, abbreviations = NULL, repl_list = NULL) {
+  lc_words = snakecase::to_any_case(str_vec, case = 'snake', sep_out = ' ', abbreviations = abbreviations)
+  # Map shorthand to longhand
+  for (repl in names(repl_list)) {
+    lc_words = gsub(repl, repl_list[[repl]], lc_words)
+  }
+  # Recapitalize abbreviations (doesn't deal with abbreviations within words)
+  for (abbrev in abbreviations) {
+    lc_words = gsub(tolower(abbrev), toupper(abbrev), lc_words)
+  }
+  paste0(toupper(substr(lc_words, 1, 1)), substr(lc_words, 2, nchar(lc_words)))
+}
+
 .geom_text = function(...) {
   geom_text(..., family = 'Palatino')
 }
