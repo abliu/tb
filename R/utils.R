@@ -1,4 +1,11 @@
-.sentence_case = function(str_vec, abbreviations = NULL, repl_list = NULL) {
+.param_sentence = function(param_list) {
+  names(df_and_elims$elims) %>% purrr::map_chr(function(name) {
+    glue::glue("{.sentence_case(name, cap = F, abbreviations = c('FDR'), repl_list = list(thresh = 'threshold',
+               pval = 'p-value'))} (", glue::glue(df_and_elims$elims[[name]], .sep = ", "), ")")
+  }) %>% glue::collapse(sep = ", ", last = " and ")
+}
+
+.sentence_case = function(str_vec, abbreviations = NULL, repl_list = NULL, cap = TRUE) {
   lc_words = snakecase::to_any_case(str_vec, case = 'snake', sep_out = ' ', abbreviations = abbreviations)
   # Map shorthand to longhand
   for (repl in names(repl_list)) {
@@ -8,7 +15,7 @@
   for (abbrev in abbreviations) {
     lc_words = gsub(tolower(abbrev), toupper(abbrev), lc_words)
   }
-  paste0(toupper(substr(lc_words, 1, 1)), substr(lc_words, 2, nchar(lc_words)))
+  ifelse(rep(cap, length(lc_words)), paste0(toupper(substr(lc_words, 1, 1)), substr(lc_words, 2, nchar(lc_words))), lc_words)
 }
 
 .geom_text = function(...) {
