@@ -1,7 +1,7 @@
 ---
 classoption: landscape
 fontsize: 10pt
-geometry: left=0.5in, right=0.5in, top=1in, bottom=1in
+geometry: left=0.5in, right=0.5in, top=0.2in, bottom=0.2in
 link-citations: yes
 output:
   pdf_document:
@@ -61,10 +61,19 @@ gd = .cache_('gen_data', here::here('vignettes', 'ltbAnalysis'), function() {
 })
 ```
 
+```{r gen_sig_data}
+gene_sigs = .df_from_list_of_lists(gd$geneFilters) %>% tibble::rownames_to_column(var = 'geneSignature') %>% dplyr::mutate(forwardSearchThresh = stringr::str_match(filterDescription, 'forwardThresh=([0-9.]+)')[,2]) %>% dplyr::arrange(desc(effectSizeThresh))
+gene_sigs_spread = gene_sigs %>% tidyr::unnest(posGeneNames, .drop=F) %>% dplyr::mutate(effectSize = "+") %>% tidyr::spread(posGeneNames, effectSize) %>% tidyr::unnest(negGeneNames, .drop=F) %>% dplyr::mutate(effectSize = "-") %>% tidyr::spread(negGeneNames, effectSize) %>% dplyr::arrange(desc(effectSizeThresh))
+ord_by_freq = names(sort(gene_sigs_spread %>% dplyr::summarize_all(function(col) {length(which(col %in% c('+', '-')))}), decreasing = TRUE))[1:34]
+gene_sigs_spread[,10:43] = gene_sigs_spread[,ord_by_freq]
+names(gene_sigs_spread)[10:43] = ord_by_freq
+gene_sigs_simpl = gene_sigs_spread %>% dplyr::select(-dplyr::one_of(c('posGeneNames', 'negGeneNames', 'filterDescription', 'timestamp')))
+```
+
 ```{r fig_setup}
 fontfamily = 'Palatino'
-theme_set(theme_bw(base_size = 10) + theme(
-  text = element_text(family = fontfamily, size = 10),
+theme_set(theme_bw(base_size = 11) + theme(
+  text = element_text(family = fontfamily, size = 11),
   panel.border = element_blank(),
   strip.background = element_rect(fill = 'gray92', colour = 'white'),
   strip.text = element_text(colour = 'gray40'),
@@ -72,10 +81,43 @@ theme_set(theme_bw(base_size = 10) + theme(
   axis.text = element_text(colour = 'gray40')))
 ```
 
+```{r tab1}
+df_and_elims = .elim_unif_cols(gene_sigs_simpl, cols = colnames(gene_sigs_simpl)[1:7])
+options(knitr.kable.NA = '')
+knitr::kable(df_and_elims$df[,1:13], align = 'r',
+                 col.names = c(.sentence_case(colnames(df_and_elims$df)[1:2],
+                                            abbreviations = c('FDR'),
+                                            repl_list = list(thresh = 'threshold',
+                                                             pval = 'p-value')),
+                               colnames(df_and_elims$df)[3:ncol(df_and_elims$df)])[1:13])
+```
+
+All gene signatures had the same values for `r .param_sentence(df_and_elims$elims)`. 23 least common genes (`r glue::collapse(colnames(df_and_elims$df)[14:36], sep = ", ", last = " and ")`) are truncated from right end of table.
+
 ```{r fig1, fig.height = 6.5, fig.width = 9.5}
-p1 = ggplot(gd$ds_by_filters, aes(metric_val, gene_filter)) + geom_point() + geom_errorbarh(aes(xmin = metric_lower, xmax = metric_upper), height = 0) + .geom_text(aes(label = signif(metric_val, 2)), hjust=0.25, vjust=1.1, colour='gray40', size=3) + xlab(NULL) + ylab(NULL) + facet_grid(disc_or_valid + dataset ~ metric_name, switch = "y", scales = "free_x", labeller = labeller(dataset = function(string) { substr(string, 1, 8)}))
+p1 = ggplot(gd$ds_by_filters, aes(metric_val, gene_filter)) + geom_point() + geom_errorbarh(aes(xmin = metric_lower, xmax = metric_upper), height = 0) + .geom_text(aes(label = signif(metric_val, 2)), hjust=0.25, vjust=1.1, colour='gray40', size=3) + xlab(NULL) + ylab(NULL) + facet_grid(disc_or_valid + dataset ~ toupper(metric_name), switch = "y", scales = "free_x", labeller = labeller(dataset = function(string) { substr(string, 1, 8)}))
 g1 = ggplotGrob(p1) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points")) # this is manual; will try to have automated way in future
 p2 = ggplot(gd$ds_labels, aes(.abbreviate_if(group, condition = function(x) { x != 'Healthy'}, minlength = 3))) + geom_bar(width = 0.05) + xlab(NULL) + ylab(NULL) + coord_flip() + facet_grid(dataset ~ info) + theme(strip.text.y = element_blank())
 g2 = ggplotGrob(p2) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points")) # this is manual; will try to have automated way in future
 plot_grid(g1, g2, nrow = 1, rel_widths = c(2, 1))
 ```
+
+## Workflow Practices I've Learned From
+
+I was ecstatic that my first run through MetaIntegrator took less than an hour (Hayley, Aditya, Francesco, Tim and others had tidied the data already). My first run through iterating on even slightly customized figures, on the other hand, was much more time-consuming.
+
+After reading Edward Tufte's _The Visual Display of Quantitative Information_ on good data visualization practices, I only thought 10 percent of them *truly* mattered. But even implementing those 10% in the figures I generate in my exploratory data analysis has been more involved than I expected. I quickly found that, among other things, it was hard to keep track of data versions and tedious to repeat hard-coded visualization code. Here are some workflow practices I have tried to solve these issues and accelerate my process:
+
+1. Rmarkdown and knitr notebooks. After my $n$-th time trying to track down which code I had used to generate the figure I posted on Slack a month ago, I discovered Rmarkdown. It tightly integrates code with results and figures it produces. It even allows you to generate an HTML version of your analysis with a button to hide/show the code next to each figure.
+2. Caching. After I started using Rmarkdown, I was quickly slowed down. It took 8 minutes each time I wanted to make any kind of change to my figures, because, by virtue of integrating code with results, knitr was recomputing the data processing every time. I cached intermediate results to solve this. First, I tried knitr's cache option, which didn't work for me but seems to work fine for most people. Then I wrote my own cache function, which I've been using as follows:
+
+```gd = .cache_('gen_data', here::here('vignettes', <Rmd_filename>), function() {<evaluate code here>; return(environment())}```
+
+3. Rmarkdown templates and wrapper functions. It is one thing to read or hear about good visualization and development practices, another thing to understand if they're worthwhile, and if so, yet another thing to make it easy to do them and to remember to do them. I have found writing my own wrapper functions and putting reminders in Rmarkdown templates to be useful here. These things allow me to do things like automatically round numbers to two significant digits and change variable names into readable English before showing them in figures. Very basic example for changing font family:
+
+```.geom_text = function(...) {
+  geom_text(..., family = 'Palatino')
+}```
+
+4. Git Large File Storage. Version control of large files.
+5. profvis. Enables profiling of slow code.
