@@ -1,3 +1,38 @@
+# Assumes l = list(a, b, ...) where a, b, ... themselves are lists, and are
+# *rows/observations*. Handles cases where, if a = list(x, y, ...), x is a
+# character vector. Useful for combining gene filter objects into data frames
+# with rows as gene filters.
+.df_from_list_of_lists = function(l) {
+  init_df = data.frame(t(sapply(l,c)))
+  # Unlist df types that are nested
+  for (column in names(init_df)) {
+    if (all(init_df[,column] %>% purrr::map(length) == 1)) {
+      # Get type of first elt in column; CURRENTLY LOSES S3 CLASS!
+      base_type = typeof(init_df[,column][[1]])
+      init_df[,column] = as.vector(init_df[,column], mode = base_type)
+    }
+  }
+  init_df
+}
+
+# Eliminate columns with at most n unique values from a df, and return the a
+# list of the simplified df and the eliminated column names and unique values.
+# A further improvement here would be to store the IDs corresponding to the
+# unique values (group by, essentially) in list_of_elims.
+.elim_unif_cols = function(df, cols, n = 1) {
+  elims = list()
+  for (column in names(df)) {
+    if (column %in% cols) {
+      unique_vals = unique(df[,column])
+      if(length(unique_vals) <= n) {
+        df[,column] = NULL # remove column
+        elims[[column]] = unique_vals
+      }
+    }
+  }
+  list(df = df, elims = elims)
+}
+
 .param_sentence = function(param_list) {
   names(df_and_elims$elims) %>% purrr::map_chr(function(name) {
     glue::glue("{.sentence_case(name, cap = F, abbreviations = c('FDR'), repl_list = list(thresh = 'threshold',
