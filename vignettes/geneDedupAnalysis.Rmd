@@ -1,0 +1,65 @@
+---
+classoption: landscape
+fontsize: 10pt
+geometry: left=0.5in, right=0.5in, top=0.2in, bottom=0.2in
+link-citations: yes
+output:
+  pdf_document:
+    fig_crop: yes
+  beamer_presentation: default
+  html_document:
+    df_print: paged
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_html: default
+papersize: letter
+---
+
+```{r setup, include=FALSE}
+load_pkgs = c('cowplot', 'ggplot2', 'magrittr', 'tufte')
+purrr::walk(load_pkgs, ~ library(., character.only = TRUE))
+devtools::load_all()
+knitr::opts_chunk$set(
+  tidy = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE,
+  fig.fullwidth = TRUE,
+  fig.width = 4,
+  fig.height = 3)
+options(htmltools.dir.version = FALSE)
+```
+
+Sometimes datasets refer to the same gene using different names or symbols before they enter the MetaIntegrator pipeline. This can mess up the analysis, for example, by eliminating such genes from consideration from the list of differentially expressed genes because no gene name/symbol/reference appears in enough datasets. Here, different datasets refer to the Septin 9 (name) or SEPT9 (symbol) gene differently:
+
+```{r gen_data, results="hide", fig.show="hide"}
+# Wrap in .cache_ from utils! E.g. gd = .cache_('gen_data', here::here('vignettes', <Rmd_filename>), function() {<evaluate code here and return important variables in list>})
+TB_human_datasets_04_2018 = readRDS(here::here("data", "TB_human_datasets_04_2018.rds"))
+```
+
+```{r tab1}
+sept9_names = tibble::tibble(GSE = names(TB_human_datasets_04_2018), `Septin 9 in GSE` = purrr::map_lgl(TB_human_datasets_04_2018, ~ "Septin 9" %in% .$keys), `SEPT9 in GSE` = purrr::map_lgl(TB_human_datasets_04_2018, ~ "SEPT9" %in% .$keys), GPL = c('GPL6947', 'GPL4133', 'GPL6480, GPL7731', 'GPL10558', 'GPL10558', 'GPL10558', 'GPL10558', 'GPL10558', 'GPL10558', 'GPL6883', 'GPL6480', 'GPL21040', 'GPL570', 'GPL16951', 'GPL10558', 'GPL11154', 'GPL11154', 'GPL11154', 'GPL11154', 'GPL16791', 'GPL10558', 'GPL18573', 'GPL15207', 'GPL17077', 'GPL6102', 'A-AGIL-28, A-MEXP-2104', 'GPL10558', 'GPL10558', 'GPL11532', 'GPL10558', NA, 'GPL11154'))
+knitr::kable(sept9_names)
+```
+
+One solution is to map all possible references to a gene to the standardized, unique _gene symbol_ as described [here](https://www.genenames.org/about/guidelines), i.e. name deduplication. Aditya Rao's `MetaIntegrator::geneNameCorrection`, Francesco Vallania and Andrew Tam's `MetaIntegrator:::.GEO_fData_key_parser` and the R package [HGNCHelper](https://cran.r-project.org/web/packages/HGNChelper/index.html) already deduplicate many cases; for example, `MetaIntegrator::geneNameCorrection` deduplicates unusual genes which are often referred to by their names instead of their symbols (e.g. Septin 9 instead of SEPT9) because their symbols will get parsed into dates by Microsoft Excel look like dates. A comprehensive search of genes in our datasets that aren't symbols might reveal more cases of genes that need to be deduplicated. That's what I did below for the genes in `TB_human_datasets_04_2018`:
+
+```{r gen-data2, echo = TRUE}
+all_genes = purrr::map(TB_human_datasets_04_2018, ~ .$keys) %>% unlist %>% unique
+# Follow https://www.genenames.org/about/guidelines#genesymbols to identify invalid symbols
+weird_genes = all_genes[which(!grepl("^[A-Z]([,;A-Z0-9-]| /// )*$", all_genes) & !grepl("orf", all_genes) & nchar(all_genes) > 0)]
+length(weird_genes)
+```
+
+It turns out that almost half of the `r length(weird_genes)` are `"HS\.[A-Z0-9]+"` genes that come from just one dataset, GSE83892, so let's ignore those.
+
+```{r gen-data3, echo = TRUE}
+weird_genes = weird_genes[which(!grepl("^HS\\.", weird_genes))]
+length(weird_genes)
+```
+
+By continuing to browse `weird_genes`, break it down into cases (e.g. `"HS\.[A-Z0-9]+"`) and understand which cases are not covered by the aforementioned solutions, the reader can identify what remaining logic needs to be written into MetaIntegrator to deduplicate the remaining unsolved cases, which could be corrupting the data in existing analyses. I'm deprioritizing finishing this up because I think we've hit an 80/20 solution for dedpulication, but I could be wrong.

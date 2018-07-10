@@ -59,6 +59,6 @@ p + facet_grid(drv ~ .)
 
 It also includes tables. Use `knitr::kable` for tables.
 
-```{r tab1, dependson}
+```{r tab1}
 knitr::kable(mtcars[1:6, 1:6])
 ```
