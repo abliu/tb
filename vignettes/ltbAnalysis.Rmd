@@ -55,7 +55,6 @@ gd = .cache_('gen_data', here::here('vignettes', 'ltbAnalysis'), function() {
   ds_labels = .gen_cohort_labels_df(gsesMeta$originalData) %>%
     dplyr::mutate(disc_or_valid = ifelse(dataset %in% potentialDiscoveryGSEIDs, 'Discovery', 'Validation'))
   ds_labels$info = "Cohort Info"
-  # remove things to save from environment?
   rm(TB_human_datasets_04_2018, gses, gsesMeta, envir = environment())
   return(environment())
 })
@@ -96,9 +95,10 @@ All gene signatures had the same values for `r .param_sentence(df_and_elims$elim
 
 ```{r fig1, fig.height = 6.5, fig.width = 9.5}
 p1 = ggplot(gd$ds_by_filters, aes(metric_val, gene_filter)) + geom_point() + geom_errorbarh(aes(xmin = metric_lower, xmax = metric_upper), height = 0) + .geom_text(aes(label = signif(metric_val, 2)), hjust=0.25, vjust=1.1, colour='gray40', size=3) + xlab(NULL) + ylab(NULL) + facet_grid(disc_or_valid + dataset ~ toupper(metric_name), switch = "y", scales = "free_x", labeller = labeller(dataset = function(string) { substr(string, 1, 8)}))
-g1 = ggplotGrob(p1) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points")) # this is manual; will try to have automated way in future
+# g1 and g2 below are manual; will try to have automated way in future
+g1 = ggplotGrob(p1) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points"))
 p2 = ggplot(gd$ds_labels, aes(.abbreviate_if(group, condition = function(x) { x != 'Healthy'}, minlength = 3))) + geom_bar(width = 0.05) + xlab(NULL) + ylab(NULL) + coord_flip() + facet_grid(dataset ~ info) + theme(strip.text.y = element_blank())
-g2 = ggplotGrob(p2) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points")) # this is manual; will try to have automated way in future
+g2 = ggplotGrob(p2) %>% gtable_add_row_space(unit(c(rep(0, 16), 15, rep(0, 11)), "points"))
 plot_grid(g1, g2, nrow = 1, rel_widths = c(2, 1))
 ```
 
